@@ -11,7 +11,6 @@ try:
 except:
     print "I don't think we currently need dtw"
 
-    
 from openpyxl import Workbook
 from openpyxl.styles import colors, Font, Color
 def toXLSX(lines, xlsxfile="test.xlsx"):
@@ -358,6 +357,7 @@ def compareAll(l0, l1, tweets, idf, t=0.001):
         compare(r0, r1, t=t, idf=idf)
         
 def makeSentiDict(testset, N=sys.maxint, printing=False):
+    invemojis = {EMOJIS[x]:x for x in EMOJIS}
     sdict = [{} for i in range(len(testset.cols))]
     for tweet in testset.tweets:
         if printing:
@@ -365,7 +365,7 @@ def makeSentiDict(testset, N=sys.maxint, printing=False):
             print tweet.GS
         for w in tweet.tokens:
             for score, scorecard in zip(tweet.GS, sdict):
-                s = 2 if w in INVEMOJIS else 1
+                s = 2 if w in invemojis else 1
                 if score == '1':
                     try: 
                         scorecard[w] += s
@@ -736,6 +736,13 @@ def scoreTweets(testset, sentidict, out=False, threshold=null, singleColumn=None
             print "BEST", best
             print "WORST", worst
             raise(e)
+    if singleColumn == None:
+        localJ = []
+        for i in range(len(J[M11])):
+            j = [j[i] for j in J]
+            localJ.append("%.2f, %.2f"%tuple(prfj(j[M11], j[M10], j[M01])[-2:]))
+        lines.append(cols)
+        lines.append(localJ)
     # print "\t".join(["%.2f"%(prfj(r, w, m)[-1]) for r, w, m in zip(J[M11], J[M10], J[M01])])
     if out:
         toXLSX(lines, xlsxfile="%s.xlsx"%(out))
@@ -785,10 +792,9 @@ def createAndTune(training, test, sentidict, threshold=0.15, N1=2500, N2=3):
     print "T %.2f, P %.3f, R %.3f, Jaccard %.3f F0 %.3f"%(threshold, p, r, j, f)
     return k
 
-def createAndTuneRange(training, test, t=1, end=0, step=0.1, N1=2500, N2=3):
+def createAndTuneRange(training, test, t=1, end=0, step=0.1, N1=2500, N2=1):
     classifiers = []
-    global INVEMOJIS
-    INVEMOJIS = {EMOJIS[x]:x for x in EMOJIS}
+    invemojis = {EMOJIS[x]:x for x in EMOJIS}
     sentidict = makeSentiDict(training)
     print "Start training"
     while t >= end:
@@ -832,6 +838,7 @@ def export(d, training=False, out=sys.stdout):
         d = d.scoredict
     except:
         pass
+    invemojis = {EMOJIS[x]:x for x in EMOJIS}
     with safeout(out) as write:
         try:
             write("\t".join([""]+training.cols)+"\n")
@@ -839,10 +846,15 @@ def export(d, training=False, out=sys.stdout):
             pass
         for w in sorted(d.keys()):
             try:
-                k = INVEMOJIS[w]
+                k = invemojis[w]
             except:
                 if LANGUAGE == "AR":
-                    k = a2bw.convert(w, a2bw.bw2atable)
+                    k = w.split(":")
+                    r = a2bw.convert(k[0], a2bw.bw2atable)
+                    if len(k) > 1:
+                        k = r+":%s"%(k[1])
+                    else:
+                        k = r
                 else:
                     k = w
             write("\t".join([k]+["%.3f"%(s) for s in d[w]])+"\n")
