@@ -387,27 +387,6 @@ def printboth(stemmed, pyastemmed):
     for c in colours:
         print "%s: %s"%(c, len(colours[c]))
     return sorted(u), colours
-
-from openpyxl import Workbook
-from openpyxl.styles import colors, Font, Color
-def toXLSX(lines):
-    wb = Workbook()
-    ws = wb.active
-    colours = {"RED":Font(color=colors.RED, size=16),
-               "BLACK":Font(color=colors.BLACK, size=16),
-               "GREEN":Font(color="009900", size=16),
-               "BLUE":Font(color=colors.BLUE, size=16),
-               "PURPLE":Font(color="bb00bb", size=16),
-               }
-    for l in lines:
-        if "\t" in l:
-            l = l.split("\t")
-        if not l[-1] == "BLACK":
-            ws.append(l)
-    for l in ws:
-        for c in l:
-            c.font = colours[l[-1].value]
-    wb.save("test.xlsx")
     
 def NATEST(word, tag):
     return  " ".join(["%s/%s"%(buck.buck2uni(x.form), x.tag) for x in lookupword(word, tag)])
@@ -436,6 +415,7 @@ def stemBest(word):
                 w = wv
             else:
                 w = wn
+    return ["%s:%s"%(x.form, x.tag[0]) for x in w]
     prefixes = []
     for p in w:
         if "STEM" in p.tag:
@@ -456,11 +436,8 @@ def stemBest(word):
         
 def stemAll(text0):
     text1 = []
-    text0 = convert(text0, a2bwtable)
     for w in text0.split(" "):
         text1 += stemBest(w)
-    text1 = " ".join(text1)
-    text2 = convert(text1, bw2atable).encode("UTF-8")
-    return text2
+    return text1
 
     

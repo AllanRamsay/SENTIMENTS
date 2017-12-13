@@ -3,10 +3,11 @@ import socket, sys, re, os, shutil
 import threading, time
 from useful import *
 
-PYTHONPORTS = 55000
+PYTHONPORTS = 56224
 HOST = "localhost"
 LOGS = "LOGS"
 LOCKS = "LOCKS"
+RAMAPP = "ramapp.cs.man.ac.uk"
 
 def doit(x):
     try:
@@ -47,12 +48,12 @@ def log(who, msg):
         print msg
         write(msg)
         
-def listen(port=PYTHONPORTS, task=doit):
-    me = "LISTENER, port %s"%(port)
+def listen(host=HOST, port=PYTHONPORTS, task=doit):
+    me = "LISTENER, host %s, port %s"%(host, port)
     log(me, "getting socket on port %s"%(port))
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        s.bind((HOST, port))
+        s.bind((host, port))
     except Exception as e:
         log(me, e)
         return
@@ -71,7 +72,6 @@ overwhelmed with requests, the fact that I've got N servers ready and
 waiting will help.
 """
 def converse(me, s, port, task=doit):
-    print "AAA"
     s.listen(port)
     log(me, "listening for client on %s"%(port))
     conn, addr = s.accept()
@@ -79,8 +79,6 @@ def converse(me, s, port, task=doit):
     log(me, "contacted by %s"%(addr,))
     try:
         query = conn.recv(1024)
-        print query, query.__class__
-        log(me, "client asked for ...")
         answer = task(query)
     except Exception as e:
         answer = e
@@ -89,8 +87,14 @@ def converse(me, s, port, task=doit):
     conn.close()
     unlock(port)
     log(me, "done")
+
+def connect(host=HOST, port=PYTHONPORTS):
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    port = PYTHONPORTS
+    print host, port
+    s.connect((host, port))
     
-def askserver(msg):
+def askserver(msg, host=HOST):
     me = "client"
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     port = PYTHONPORTS
@@ -102,13 +106,13 @@ def askserver(msg):
     """
     Start a server at this port if there isn't already one running: use
     the global value for TASK which will have been set in the initial call of
-    startServers
+    startSServers
     """
     print portfile(port)
     print "MSG %s"%(msg)
-    s.connect((HOST, port))
+    s.connect((host, port))
     log(me, "connected(%s)"%(port))
-    s.sendall(msg.encode("UTF-8"))
+    s.sendall(msg)
     print "SENT %s"%(msg)
     wholething = ""
     while True:
@@ -120,12 +124,13 @@ def askserver(msg):
     s.close()
     return wholething
 
-def startServer(port, task=doit):
+def startServer(host=HOST, port=PYTHONPORTS, task=doit):
     with safeout(os.path.join(LOCKS, "port%s"%(port))) as write:
         write("%s started"%(port))
-    threading.Thread(target=lambda:listen(port=port, task=task)).start()
+    print "Starting at %s, %s"%(host, port)
+    threading.Thread(target=lambda:listen(host=host, port=port, task=task)).start()
             
-def startServers(startport=PYTHONPORTS, count=5, task=doit):
+def startServers(host=HOST, startport=PYTHONPORTS, count=1, task=doit):
     global TASK
     TASK = task
     try:
@@ -144,5 +149,5 @@ def startServers(startport=PYTHONPORTS, count=5, task=doit):
         OTHER THAN BY KILLING THE MAIN THREAD
         """
         threading._sleep(5)
-        startServer(port, task=task)
+        startServer(host=host, port=port, task=task)
     return startport
