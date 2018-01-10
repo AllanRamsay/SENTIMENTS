@@ -1,9 +1,12 @@
-import re, os, sys, shutil, scipy, numpy, codecs
+import re, os, sys, shutil, codecs
 from numpy import dot
 import a2bw
 import json
 from useful import *
-from nltk.tokenize import sent_tokenize, word_tokenize
+try:
+    from nltk.tokenize import sent_tokenize, word_tokenize
+except:
+    pass
 import stemmer
 reload(stemmer)
 try:
@@ -43,11 +46,14 @@ def toXLSX(lines, xlsxfile="test.xlsx"):
     wb.save(xlsxfile)
     
 """
->>> test = makeTFIDF(ENGLISHDEV)
->>> training = makeTFIDF(ENGLISHTRAINING)
+>>> etest = makeTFIDF(ENGLISHDEV)
+>>> etraining = makeTFIDF(ENGLISHTRAINING)
+
+>>> atest = makeTFIDF(ARABICDEV)
+>>> atraining = makeTFIDF(ARABICTRAINING)
 
 # this is just the raw counts
->>> sentidict = makeSentiDict(training)
+>>> esentidict = makeSentiDict(etraining)
 
 # this is the one that produces a basic classifier
 >>> k0 = makeScoreDict(training, sentidict, N=2500)
@@ -55,7 +61,8 @@ def toXLSX(lines, xlsxfile="test.xlsx"):
 
 This will generate a list of classifiers with a range of thresholds.
 
->>> k = createAndTuneRange(training, test, sentidict)
+>>> eclassifiers = createAndTuneRange(etraining, etest)
+>>> aclassifiers = createAndTuneRange(atraining, atest)
 
 # remove misleading words, set a threshold for each 
 # sentiment. This a few seconds. The threshold set is now
@@ -65,7 +72,7 @@ This will generate a list of classifiers with a range of thresholds.
 
 # Put each tweet in a nice looking file: j is the Jaccard value: should be 0.415, f should be 0.586
 
->>> p, r, f, j, errors = scoreTweets(test, k1, threshold=k1.threshold, out="xxx.xlsx")
+>>> p, r, f, j, errors, lines = scoreTweets(test, k1, threshold=k1.threshold, out="xxx.xlsx")
 
 """
 
@@ -86,34 +93,22 @@ urls = re.compile("//t.co/\S*|http|#|:")
 
 class TWEET:
 
-    def __init__(self, id=False, text=False, features=False, scores=False, tokens=False):
+    def __init__(self, id=False, src=False, text=False, features=False, scores=False, tokens=False):
         self.id = id
         self.features = normalise(features)
-        self.size = self.size()
+        self.src = src
         self.text = text
         self.GS = scores
         self.tokens = tokens
         
     def __repr__(self):
-        return "<%s, %s>"%(self.size, self.text)
+        return self.src.encode("UTF-8")
 
     def normalise(v):
         t = sum(v.values())
         for k in v:
             v[k] = v[k]/t
         return v
-
-    def size(self):
-        return scipy.sqrt(sum(map(scipy.square, self.features.values())))
-
-    def cos(v1, v2):
-        nom = 0
-        f1 = v1.features
-        f2 = v2.features
-        for k in f1:
-            if k in f2:
-                nom += f1[k]*f2[k]
-        return nom/(v1.size*v2.size)
 
 morepunc = re.compile("(?P<punc>/|\.+|'|,|!|#|\$|%|\d+|&\S*|\(|\)|\*|\[|\]|-|\+|:|;|=|@|'|`|\")")
 
@@ -139,6 +134,13 @@ class TESTSET:
         self.idf = idf
         self.words = [w[0] for w in reversed(sortTable(idf))]
         self.makeIndex()
+
+    def __iter__(self):
+        for tweet in self.tweets:
+            yield tweet
+
+    def __getitem__(self, i):
+        return self.tweets[i]
 
     def makeIndex(self):
         self.index = {}
@@ -199,33 +201,20 @@ def addBigrams(tokens0):
         last = x
     return tokens1
             
-def makeTFIDF(docs=ENGLISHTRAINING, threshold=0, N=False):
-    global LANGUAGE
-    LANGUAGE = languagePattern.match(docs).group("language")
-    idf = {}
-    cols = False
-    tweets = []
-    index = {}
-    """
-    just read them and add them to a list
-
-    calculate the tf vector and accumulate the idf vector as you go
-    """
-    for tweet in codecs.open(docs, encoding="UTF-8").read().split("\n"):
+def makeTweet(tweet, idf):
+    if isinstance(tweet, list):
+        tweet, src, scores = tweet[0], tweet[1], tweet[2:]
+    else:
+        src = tweet
+        tweet = ""
+        scores = []
         tweet = tweet.strip().replace("=", "").replace("\\n", " ")
         if LANGUAGE == "AR":
             tweet = SPACE.sub(" ", re.compile("_|#|\.+").sub(" ", a2bw.convert(tweet, a2bw.a2bwtable)))
         tweet = splitEmojis(tweet)
-        if tweet == "":
-            continue
-        if not cols:
-            cols = tweet.split()[2:]
-            continue
-        tweet = tweet.strip().split("\t")
-        tweet, text, scores = tweet[0], tweet[1], tweet[2:]
         if not tweet == []:
             d = {}
-            text = prefixes.sub("", text).strip()
+            text = prefixes.sub("", src).strip()
             # tokens = [w for w in tokenise(prefixes.sub("", text).strip())]
             # tokens = [w[2:] if w.startswith("al") else w for w in text.split()]
             if LANGUAGE == "AR":
@@ -775,7 +764,7 @@ and then finding the best per-column thresholds. The first bit in turn
 depends on the threshold which was set for using the initial
 classifier, so you have to optimise for that as well.
 """
-def tune(training, scoredict, threshold=0.15, N=3):
+def tune(training, scoredict, threshold=0.15, N=1):
     scoredict.threshold = threshold
     print "tune %.1f"%(threshold)
     for i in range(N):
@@ -785,7 +774,7 @@ def tune(training, scoredict, threshold=0.15, N=3):
         scoredict.threshold = setThresholds(training, scoredict)
     return scoredict
 
-def createAndTune(training, test, sentidict, threshold=0.15, N1=2500, N2=3):
+def createAndTune(training, test, sentidict, threshold=0.15, N1=2500, N2=1):
     k = makeScoreDict(training, sentidict, N=N1)
     k = tune(training, k, threshold=threshold, N=N2)
     p, r, f, j, errors, lines = scoreTweets(test, k)
@@ -859,60 +848,11 @@ def export(d, training=False, out=sys.stdout):
                     k = w
             write("\t".join([k]+["%.3f"%(s) for s in d[w]])+"\n")
     
-"""
-bunch of stuff for doing LSA. I haven't made it pay off, but it is a correct implementation
-so we can use it if we can find data that it does any good for
-"""
-def getMatches(v, vv):
-    m = []
-    for x in vv:
-        if not x == v:
-            m.append((x.cos(v), x))
-    m.sort()
-    m.reverse()
-    return m
-
-def makeIndexes(words):
-    w2i = {}
-    i2w = {}
-    for i, w in enumerate(words):
-        w2i[w] = i
-        i2w[i] = w
-    return w2i, i2w
-
-def tfidf2array((tweets, idf)):
-    w2i, i2w = makeIndexes(idf)
-    a = numpy.zeros((len(tweets), len(idf)))
-    for i, t in enumerate(tweets):
-        features = t.features
-        for f in features:
-            a[i][w2i[f]] = features[f]
-    return a
-
-def svd((tweets, idf), N=sys.maxint):
-    print tweets.__class__
-    u, s0, v = numpy.linalg.svd(tfidf2array((tweets, idf))[:N])
-    s1 = numpy.zeros((u.shape[0], v.shape[0]))
-    s1[:s0.shape[0], :s0.shape[0]] = numpy.diag(s0)
-    return u, s1, v
-
-def prune(s0, t=0.0, N=sys.maxint):
-    s1 = numpy.zeros(s0.shape)
-    for i in range(min(s1.shape)):
-        if s0[i][i] > t and i < N:
-            s1[i][i] = s0[i][i]
-    return s1
-
-def dotdot((u, s, v)):
-    return dot(u, dot(s, v))
-
-def reconstruct(usv, (tfidf, idf), t=0.01):
-    w2i, i2w = makeIndexes(idf)
-    r = dotdot(usv)
-    m = {}
-    for i, t in enumerate(tfidf):
-        m[t] = {}
-        for j, x in enumerate(r[i]):
-            if x > t:
-                m[t][i2w[j]] = x
-    return m
+def classify(tweet):
+    global LANGUAGE
+    LANGUAGE = "AR"
+    [COLS, SENTIDICT] = json.load(open("aclassifier.json"))
+    tweet = makeTweet(tweet, {})
+    tweet.GS = [0]*11
+    sentiments = scoreTweet(tweet, SENTIDICT)[0]
+    return ":".join([str(col) for i, col in enumerate(COLS) if not sentiments[i] == 0])

@@ -392,12 +392,12 @@ def NATEST(word, tag):
     return  " ".join(["%s/%s"%(buck.buck2uni(x.form), x.tag) for x in lookupword(word, tag)])
 
 
-DERIVGROUPS = {"NN": ["NCONJ", "VOC", "PREP", "PX", "NAME", "DET", "NSTEM", "NN", "PRON", "ALLAH"], 
-               "VB": ["VCONJ", "NEG", "VSTEM", "VB", "PRON1", "PRON2"]}
+DERIVGROUPS = {"NN": ["NCONJ", "VOC", "PREP", "PX", "NAME", "DET", "NSTEM", "PRON", "ALLAH"], 
+               "VB": ["VCONJ", "NEG", "VSTEM", "PRON1", "PRON2"]}
 
-def stemBest(word):
-    wn = lookupword(word, "NN", tags=DERIVGROUPS)
-    wv = lookupword(word, "VB", tags=DERIVGROUPS)
+def stemBest(word, tags=DERIVGROUPS, forNabeela=False, UTF8=False):
+    wn = lookupword(word, "NN", tags=tags)
+    wv = lookupword(word, "VB", tags=tags)
     if not wn:
         if not wv:
             return [word]
@@ -409,13 +409,32 @@ def stemBest(word):
         else:
             nparts = {x.tag:x.form for x in wn}
             if not "NSTEM" in nparts:
-                return [word]
-            vparts = {x.tag:x.form for x in wv}
-            if len(vparts["VSTEM"]) < len(nparts["NSTEM"]):
-                w = wv
+                try:
+                    w = nparts["NAME"]
+                except:
+                    w = word
             else:
-                w = wn
-    return ["%s:%s"%(x.form, x.tag[0]) for x in w]
+                vparts = {x.tag:x.form for x in wv}
+                if len(vparts["VSTEM"]) < len(nparts["NSTEM"]):
+                    w = wv
+                else:
+                    w = wn
+    if forNabeela:
+        nresult = w
+        if not isinstance(w, str):
+            for x in w:
+                if "STEM" in x.tag:
+                    nresult = x.form
+                    break
+        if UTF8:
+            return a2bw.convert(nresult, a2bw.bw2atable)
+        else:
+            return nresult
+    else:
+        try:
+            return ["%s:%s"%(x.form, x.tag[0]) for x in w]
+        except:
+            return [w]
     prefixes = []
     for p in w:
         if "STEM" in p.tag:
